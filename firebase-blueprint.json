@@ -1,0 +1,69 @@
+{
+  "entities": {
+    "Election": {
+      "title": "Election",
+      "description": "Represents a voting event.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" }
+            }
+          }
+        },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["upcoming", "active", "closed"] },
+        "creatorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "options", "status", "creatorId", "createdAt"]
+    },
+    "Vote": {
+      "title": "Vote",
+      "description": "A single vote cast by a user.",
+      "type": "object",
+      "properties": {
+        "electionId": { "type": "string" },
+        "userId": { "type": "string" },
+        "optionId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "previousHash": { "type": "string" },
+        "hash": { "type": "string" },
+        "blockIndex": { "type": "integer" }
+      },
+      "required": ["electionId", "userId", "optionId", "timestamp", "previousHash", "hash", "blockIndex"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Public profile information for a user.",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "isAdmin": { "type": "boolean" }
+      },
+      "required": ["displayName"]
+    }
+  },
+  "firestore": {
+    "/elections/{electionId}": {
+      "schema": "Election",
+      "description": "Collection of all elections."
+    },
+    "/elections/{electionId}/votes/{voteId}": {
+      "schema": "Vote",
+      "description": "Subcollection of votes for a specific election."
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles."
+    }
+  }
+}

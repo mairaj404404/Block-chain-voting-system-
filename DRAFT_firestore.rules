@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Primitives
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function isAdmin() { return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true; }
+
+    // User Profiles
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.keys().hasAll(['displayName']) && 
+               data.displayName is string && data.displayName.size() <= 100 &&
+               (!data.keys().contains('isAdmin') || data.isAdmin is bool);
+      }
+      
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().isAdmin == false;
+      allow update: if isOwner(userId) && isValidUser(incoming()) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL']) &&
+                      incoming().isAdmin == existing().isAdmin;
+    }
+
+    // Elections
+    match /elections/{electionId} {
+      function isValidElection(data) {
+        return data.keys().hasAll(['title', 'options', 'status', 'creatorId', 'createdAt']) &&
+               data.title is string && data.title.size() <= 200 &&
+               data.options is list && data.options.size() >= 2 &&
+               data.status in ['upcoming', 'active', 'closed'] &&
+               data.creatorId == request.auth.uid &&
+               data.createdAt == request.time;
+      }
+
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidElection(incoming());
+      allow update: if isAdmin() && isValidElection(incoming()) &&
+                      (
+                        // Admin can manage status
+                        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'description', 'endTime'])
+                      );
+      allow delete: if false;
+
+      // Votes subcollection
+      match /votes/{voteId} {
+        function isValidVote(data) {
+          return data.keys().hasAll(['electionId', 'userId', 'optionId', 'timestamp', 'previousHash', 'hash', 'blockIndex']) &&
+                 data.electionId == electionId &&
+                 data.userId == request.auth.uid &&
+                 data.optionId is string &&
+                 data.timestamp == request.time &&
+                 data.previousHash is string &&
+                 data.hash is string &&
+                 data.blockIndex is int;
+        }
+
+        function electionIsActive() {
+          return get(/databases/$(database)/documents/elections/$(electionId)).data.status == 'active';
+        }
+
+        function userHasNotVoted() {
+          // Note: This is tricky in rules without list. 
+          // We prefer a structure where we create a document at /elections/{id}/voters/{userId}
+          // to enforce one vote per user efficiently.
+          return !exists(/databases/$(database)/documents/elections/$(electionId)/voters/$(request.auth.uid));
+        }
+
+        allow read: if isSignedIn();
+        // Atomic consistency: User must record their voter status in the same batch (handled by client)
+        allow create: if isSignedIn() && 
+                        electionIsActive() && 
+                        isValidVote(incoming()) &&
+                        existsAfter(/databases/$(database)/documents/elections/$(electionId)/voters/$(request.auth.uid));
+      }
+
+      match /voters/{voterId} {
+        allow read: if isSignedIn();
+        allow create: if isOwner(voterId) && 
+                        existsAfter(/databases/$(database)/documents/elections/$(electionId)/votes/$(request.auth.uid + "_vote"));
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "DecentralVoter",
+  "description": "A verifiably secure blockchain-based voting platform featuring cryptographic integrity and real-time tabulation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

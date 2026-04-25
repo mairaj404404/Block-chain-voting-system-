@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    
+    function isBootstrapAdmin() {
+      return isSignedIn() && request.auth.token.email == 'mairajansari905@gmail.com';
+    }
+
+    match /users/{userId} {
+      allow get: if true;
+      allow list: if isSignedIn();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && (request.resource.data.get('isAdmin', false) == resource.data.get('isAdmin', false) || isBootstrapAdmin());
+    }
+
+    match /elections/{electionId} {
+      allow list: if true;
+      allow get: if true;
+      
+      function isAdmin() { 
+        return isBootstrapAdmin() || (
+               isSignedIn() && 
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true
+        ); 
+      }
+
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (
+        isSignedIn() && 
+        resource.data.status == 'active' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['voteCounts'])
+      );
+
+      match /votes/{voteId} {
+        allow list, get: if true;
+        allow create: if isSignedIn();
+      }
+
+      match /voters/{voterId} {
+        allow get: if true;
+        allow list: if true;
+        allow create: if isOwner(voterId);
+      }
+    }
+  }
+}
